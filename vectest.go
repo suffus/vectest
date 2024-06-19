@@ -3,7 +3,6 @@ package vectest
 import (
 	"math"
 	"math/rand"
-	"math/sort"
 	"sort"
 )
 
