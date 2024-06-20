@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"sync"
 )
 
 type Vector struct {
@@ -119,6 +120,11 @@ type VectorDocument struct {
 }
 
 func NewVectorDocument(docId int, vec *Vector) *VectorDocument {
+	// normalise the vector
+	norm := vec.Norm()
+	if norm != 0 {
+		vec.ScaleInPlace(1.0 / norm)
+	}
 	return &VectorDocument{docId, vec}
 }
 
@@ -138,7 +144,14 @@ func (l *VectorDocumentList) Get(i int) *VectorDocument {
 	return l.Docs[i]
 }
 
-func (l *VectorDocumentList) Search(v *Vector, k int) []*VectorDocument {
+func (l *VectorDocumentList) Search(inv *Vector, k int) []*VectorDocument {
+	// normalize v
+	v := inv.Copy()
+	norm := v.Norm()
+	if norm != 0 {
+		v.ScaleInPlace(1.0 / norm)
+	}
+
 	if len(l.Docs) == 0 {
 		return nil
 	}
@@ -146,15 +159,21 @@ func (l *VectorDocumentList) Search(v *Vector, k int) []*VectorDocument {
 		k = len(l.Docs)
 	}
 	scores := make([]float64, len(l.Docs))
+	wg := &sync.WaitGroup{}
 	for i, doc := range l.Docs {
-		scores[i] = doc.Vector.InnerProduct(v)
+		wg.Add(1)
+		go func(ip *float64, doc *VectorDocument) {
+			*ip = doc.Vector.InnerProduct(v)
+			wg.Done()
+		}(&scores[i], doc)
 	}
+	wg.Wait()
 	indices := make([]int, len(l.Docs))
 	for i := range indices {
 		indices[i] = i
 	}
 	sort.Slice(indices, func(i, j int) bool {
-		return scores[i] > scores[j]
+		return scores[indices[i]] > scores[indices[j]]
 	})
 
 	result := make([]*VectorDocument, k)
